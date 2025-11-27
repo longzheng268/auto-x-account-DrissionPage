@@ -75,7 +75,7 @@ def main():
         
         logger.info("=" * 80)
         logger.info("Twitter/X 自动注册系统 v3.0")
-        logger.info("100% 基于 DrissionPage")
+        logger.info("基于 undetected-chromedriver")
         logger.info("=" * 80)
         logger.info("")
         
@@ -135,17 +135,17 @@ def main():
         logger.info("")
         if USE_INCOGNITO:
             logger.info("⚠️  启用了无痕模式（不保存数据）")
-        logger.info("⚠️  DrissionPage 会自动管理浏览器启动")
+        logger.info("⚠️  浏览器会自动启动")
         logger.info("")
         logger.info("提示:")
-        logger.info("1. 浏览器会自动启动（DrissionPage 管理）")
+        logger.info("1. 浏览器会自动启动")
         logger.info("2. 人机验证可手动或API完成")
         logger.info("3. 整个流程约 5-10 分钟")
         logger.info("")
         logger.info("=" * 80)
         logger.info("")
         
-        # 创建注册器（纯 DrissionPage 实现）
+        # 创建注册器（undetected-chromedriver 实现）
         register = TwitterRegister(
             service=service,
             browser_path=BROWSER_PATH,

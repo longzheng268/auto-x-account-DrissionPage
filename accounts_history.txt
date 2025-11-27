@@ -62,3 +62,191 @@
 错误信息: 处理人机验证失败
 ================================================================================
 
+================================================================================
+注册时间: 2025-11-27 22:40:22
+状态: ✗ 注册失败
+邮箱: N/A
+密码: N/A
+错误信息: 注册异常: 'TwitterRegister' object has no attribute '_error_result'
+================================================================================
+
+================================================================================
+注册时间: 2025-11-27 22:53:31
+状态: ✗ 注册失败
+邮箱: N/A
+密码: N/A
+错误信息: 异常: Binary Location Must be a String
+================================================================================
+
+================================================================================
+注册时间: 2025-11-27 22:53:31
+状态: ✗ 注册失败
+邮箱: N/A
+密码: N/A
+错误信息: 异常: Binary Location Must be a String
+================================================================================
+
+================================================================================
+注册时间: 2025-11-27 23:05:32
+状态: ✗ 注册失败
+邮箱: N/A
+密码: N/A
+错误信息: 异常: Binary Location Must be a String
+================================================================================
+
+================================================================================
+注册时间: 2025-11-27 23:07:32
+状态: ✗ 注册失败
+邮箱: N/A
+密码: N/A
+错误信息: 异常: Message: session not created: cannot connect to chrome at 127.0.0.1:13338
+from session not created: This version of ChromeDriver only supports Chrome version 142
+Current browser version is 144.0.7550.0; For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#sessionnotcreatedexception
+Stacktrace:
+Symbols not available. Dumping unresolved backtrace:
+	0xa44103
+	0xa44144
+	0x84e71d
+	0x88b17d
+	0x88a0d9
+	0x88001f
+	0x87fe46
+	0x8c8943
+	0x8c82ba
+	0x8bc706
+	0x88da30
+	0x88ed54
+	0xcb57b4
+	0xcb098a
+	0xa6c392
+	0xa5c4c8
+	0xa6324d
+	0xa4c478
+	0xa4c63c
+	0xa367ca
+	0x758dfcc9
+	0x774682ae
+	0x7746827e
+
+================================================================================
+
+================================================================================
+注册时间: 2025-11-27 23:13:42
+状态: ✗ 注册失败
+邮箱: N/A
+密码: N/A
+错误信息: 点击创建账号失败
+================================================================================
+
+================================================================================
+注册时间: 2025-11-27 23:23:04
+状态: ✗ 注册失败
+邮箱: N/A
+密码: N/A
+错误信息: 异常: Binary Location Must be a String
+================================================================================
+
+================================================================================
+注册时间: 2025-11-27 23:25:53
+状态: ✗ 注册失败
+邮箱: N/A
+密码: N/A
+错误信息: 异常: Binary Location Must be a String
+================================================================================
+
+================================================================================
+注册时间: 2025-11-27 23:34:39
+状态: ✗ 注册失败
+邮箱: N/A
+密码: N/A
+错误信息: 异常: Message: session not created: cannot connect to chrome at 127.0.0.1:4091
+from session not created: This version of ChromeDriver only supports Chrome version 142
+Current browser version is 144.0.7550.0; For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#sessionnotcreatedexception
+Stacktrace:
+Symbols not available. Dumping unresolved backtrace:
+	0xc54103
+	0xc54144
+	0xa5e71d
+	0xa9b17d
+	0xa9a0d9
+	0xa9001f
+	0xa8fe46
+	0xad8943
+	0xad82ba
+	0xacc706
+	0xa9da30
+	0xa9ed54
+	0xec57b4
+	0xec098a
+	0xc7c392
+	0xc6c4c8
+	0xc7324d
+	0xc5c478
+	0xc5c63c
+	0xc467ca
+	0x758dfcc9
+	0x774682ae
+	0x7746827e
+
+================================================================================
+
+================================================================================
+注册时间: 2025-11-28 00:11:55
+状态: ✗ 注册失败
+邮箱: N/A
+密码: N/A
+错误信息: 异常: 请确保 Chrome 位于: D:\Code_Project\Python Project\auto-x-account-DrissionPage\twitter_auto_register\chrome-win\chrome.exe
+================================================================================
+
+================================================================================
+注册时间: 2025-11-28 00:16:12
+状态: ✗ 注册失败
+邮箱: N/A
+密码: N/A
+错误信息: 异常: Message: session not created: cannot connect to chrome at 127.0.0.1:7184
+from session not created: This version of ChromeDriver only supports Chrome version 142
+Current browser version is 134.0.6974.0; For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#sessionnotcreatedexception
+Stacktrace:
+Symbols not available. Dumping unresolved backtrace:
+	0xda4103
+	0xda4144
+	0xbae71d
+	0xbeb17d
+	0xbea0d9
+	0xbe001f
+	0xbdfe46
+	0xc28943
+	0xc282ba
+	0xc1c706
+	0xbeda30
+	0xbeed54
+	0x10157b4
+	0x101098a
+	0xdcc392
+	0xdbc4c8
+	0xdc324d
+	0xdac478
+	0xdac63c
+	0xd967ca
+	0x758dfcc9
+	0x774682ae
+	0x7746827e
+
+================================================================================
+
+================================================================================
+注册时间: 2025-11-28 00:46:55
+状态: ✗ 注册失败
+邮箱: N/A
+密码: N/A
+错误信息: 填写注册表单失败
+================================================================================
+
+================================================================================
+注册时间: 2025-11-28 01:05:59
+状态: ✗ 注册失败
+邮箱: N/A
+密码: N/A
+错误信息: 输入邮箱验证码失败
+================================================================================
+

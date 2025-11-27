@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Twitter/X 自动注册系统
-100% 基于 DrissionPage，不造轮子
+基于 undetected-chromedriver，不造轮子
 """
 
 from .twitter_register import TwitterRegister

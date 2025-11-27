@@ -1,0 +1,15 @@
+# Twitter自动注册系统依赖
+# 100% 基于 DrissionPage，不依赖额外的库
+
+# DrissionPage - 核心浏览器自动化框架（唯一必需）
+DrissionPage>=4.0.0
+
+# 注：DrissionPage 会自动安装其依赖：
+# - requests (HTTP请求)
+# - lxml (HTML解析)
+# - psutil (进程管理)
+# - 等等
+
+# 可选：如果需要使用 HTTP 服务接口
+# requests>=2.25.0  # DrissionPage 已包含
+

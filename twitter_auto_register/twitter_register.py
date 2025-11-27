@@ -46,7 +46,7 @@ class TwitterRegister:
         """确保页面对象已创建 - 完全使用 DrissionPage 自动管理"""
         if self.page is None:
             logger.info("=" * 60)
-            logger.info("启动浏览器（DrissionPage自动管理）")
+            logger.info("启动浏览器（DrissionPage自动管理 - 增强隐匿模式）")
             logger.info("=" * 60)
             
             # 配置 ChromiumOptions - 完全使用 DrissionPage 功能
@@ -68,7 +68,6 @@ class TwitterRegister:
                 else:
                     logger.info("⚠ 项目内置浏览器不存在，使用系统浏览器")
                     logger.info(f"   查找路径: {project_chrome}")
-                    # DrissionPage 会自动查找系统浏览器
             
             # 设置用户数据目录
             user_data_dir = Path(__file__).parent.parent / "browser_data"
@@ -76,7 +75,7 @@ class TwitterRegister:
             options.set_user_data_path(str(user_data_dir))
             logger.info(f"✓ 用户数据目录: {user_data_dir}")
             
-            # 自动分配端口（DrissionPage 自动管理）
+            # 自动分配端口
             options.auto_port()
             logger.info("✓ 自动分配调试端口")
             
@@ -85,67 +84,84 @@ class TwitterRegister:
                 options.incognito()
                 logger.info("✓ 启用无痕模式")
             
-            # === DrissionPage 反检测功能（最小化配置）===
-            logger.info("配置浏览器参数...")
+            # === 增强反检测配置 ===
+            logger.info("配置浏览器参数 (增强隐匿)...")
             
-            # 1. 设置真实的 User-Agent（DrissionPage）
-            options.set_user_agent(
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            )
+            # 1. 随机 User-Agent
+            ua_list = [
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            ]
+            ua = random.choice(ua_list)
+            options.set_user_agent(ua)
+            logger.info(f"✓ User-Agent: {ua[:50]}...")
             
-            # 2. 基础参数（不使用会被检测的标志）
+            # 2. 启动参数
             options.set_argument('--no-first-run')
             options.set_argument('--no-default-browser-check')
             options.set_argument('--disable-popup-blocking')
+            options.set_argument('--disable-extensions')
+            options.set_argument('--disable-dev-shm-usage')
+            options.set_argument('--disable-web-security')
+            options.set_argument('--disable-blink-features=AutomationControlled')
+            options.set_argument('--lang=zh-CN')
             
-            # 3. 使用 DrissionPage 设置页面加载策略
-            options.set_load_mode('normal')  # 完整加载模式
-            
-            # 注意：不使用 --disable-blink-features，因为会被X检测
-            
+            options.set_load_mode('normal')
             logger.info("✓ 浏览器配置完成")
             
-            # 创建页面（DrissionPage 会自动启动浏览器）
+            # 创建页面
             try:
                 logger.info("")
                 logger.info("正在启动浏览器...")
                 self.page = ChromiumPage(options)
                 
-                # === DrissionPage 运行时反检测 ===
-                # 执行 JavaScript 隐藏 webdriver 属性
-                self.page.run_js('''
-                    Object.defineProperty(navigator, 'webdriver', {
-                        get: () => undefined
-                    });
-                ''')
+                # === 配置隐匿模式 ===
+                # 1. 动态视窗
+                width = random.randint(1024, 1920)
+                height = random.randint(768, 1080)
+                self.page.set.window.size(width, height)
+                logger.info(f"✓ 动态视窗: {width}x{height}")
                 
-                # 修改 navigator 属性
-                self.page.run_js('''
-                    Object.defineProperty(navigator, 'plugins', {
-                        get: () => [1, 2, 3, 4, 5]
-                    });
-                ''')
-                
-                # 修改 Chrome 属性
-                self.page.run_js('''
-                    window.chrome = {
-                        runtime: {}
+                # 2. 注入反检测脚本
+                stealth_js = """
+                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined, configurable: true});
+                    delete Object.getPrototypeOf(navigator).webdriver;
+                    Object.defineProperty(Object.getPrototypeOf(navigator), 'webdriver', {get: () => undefined, configurable: true});
+                    
+                    const originalQuery = window.navigator.permissions.query;
+                    window.navigator.permissions.query = (parameters) => (
+                        parameters.name === 'notifications' ?
+                        Promise.resolve({ state: Notification.permission }) :
+                        originalQuery(parameters)
+                    );
+                    
+                    Object.defineProperty(navigator, 'languages', {get: () => ['zh-CN', 'zh', 'en'], configurable: true});
+                    Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5], configurable: true});
+                    Object.defineProperty(navigator, 'mimeTypes', {get: () => [1, 2, 3, 4, 5], configurable: true});
+                    Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8, configurable: true});
+                    Object.defineProperty(navigator, 'deviceMemory', {get: () => 8, configurable: true});
+                    Object.defineProperty(navigator, 'platform', {get: () => 'Win32', configurable: true});
+                    
+                    window.chrome = {runtime: {}, loadTimes: function() {}, csi: function() {}, app: {}};
+                    
+                    const getParameter = WebGLRenderingContext.prototype.getParameter;
+                    WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                        if (parameter === 37445) return 'Intel Inc.';
+                        if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+                        return getParameter.call(this, parameter);
                     };
-                ''')
+                """
                 
-                logger.info("")
-                logger.info("=" * 60)
-                logger.info(f"✓ 浏览器启动成功！")
-                logger.info(f"   调试地址: {self.page.browser.address}")
-                logger.info(f"   JS反检测: 已注入")
-                logger.info("=" * 60)
+                self.page.run_cdp('Page.addScriptToEvaluateOnNewDocument', source=stealth_js)
+                logger.info("✓ CDP反检测脚本: 已注入 (含原型链)")
+                
+                # 3. 网络层请求头
                 logger.info("")
             except Exception as e:
                 logger.error("")
                 logger.error("=" * 60)
                 logger.error(f"✗ 浏览器启动失败！")
-                logger.error("")
                 logger.error("可能的原因：")
                 logger.error("1. 未安装 Chrome/Chromium/Edge 浏览器")
                 logger.error("2. 项目内置浏览器路径不正确")

@@ -14,7 +14,8 @@ CREATE_ACCOUNT_BTN_IMG = RESOURCES_DIR / "create_account_btn.png"
 VERIFIER_BTN_IMG = RESOURCES_DIR / "verifier_btn.png"
 
 # 项目内置浏览器路径（便携版）
-PROJECT_CHROMIUM_PATH = BASE_DIR / "twitter_auto_register" / "chrome-win" / "chrome.exe"
+# Playwright 会自动管理浏览器，不再需要指定本地路径
+PROJECT_CHROMIUM_PATH = None
 PROJECT_BROWSER_DATA_DIR = BASE_DIR / "browser_data"
 
 # Twitter URLs

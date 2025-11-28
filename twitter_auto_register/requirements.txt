@@ -1,15 +1,12 @@
 # Twitter自动注册系统依赖
-# 100% 基于 DrissionPage，不依赖额外的库
+# Twitter自动注册系统依赖
+# 基于 Playwright + Stealth
 
-# DrissionPage - 核心浏览器自动化框架（唯一必需）
-DrissionPage>=4.0.0
+# Playwright - 核心浏览器自动化框架
+playwright>=1.40.0
 
-# 注：DrissionPage 会自动安装其依赖：
-# - requests (HTTP请求)
-# - lxml (HTML解析)
-# - psutil (进程管理)
-# - 等等
-
-# 可选：如果需要使用 HTTP 服务接口
-# requests>=2.25.0  # DrissionPage 已包含
-
+# Playwright Stealth - 反检测插件
+#playwright-stealth==1.0.66
+playwright-stealth==2.0.0
+# 其他依赖
+requests>=2.25.0

@@ -1,30 +1,32 @@
 # -*- coding: utf-8 -*-
 """
 Twitter/X 自动注册模块
-100% 基于 DrissionPage 原生功能，不造轮子
+基于 Playwright + Stealth 实现
 """
 import logging
 import random
 import time
-from typing import Optional, Dict
+import msvcrt  # 用于Windows下的按键检测
+from typing import Optional, Dict, List, Any
 from pathlib import Path
 
-from DrissionPage import ChromiumPage, ChromiumOptions
+from playwright.sync_api import sync_playwright, Page, BrowserContext, Browser, Playwright, Locator, Error as PlaywrightError
+from playwright_stealth import Stealth
 
 logger = logging.getLogger(__name__)
 
 
 class TwitterRegister:
-    """Twitter/X 自动注册器 - 纯 DrissionPage 实现"""
+    """Twitter/X 自动注册器 - Playwright 实现"""
     
-    def __init__(self, service, page: Optional[ChromiumPage] = None, 
+    def __init__(self, service, page: Optional[Page] = None, 
                  browser_path: Optional[str] = None, use_incognito: bool = False):
         """
         初始化注册器
         
         Args:
             service: 服务接口
-            page: DrissionPage 页面对象（可选）
+            page: Playwright Page 对象（可选）
             browser_path: 浏览器路径（可选，自动检测）
             use_incognito: 是否使用无痕模式
         """
@@ -33,6 +35,11 @@ class TwitterRegister:
         self.browser_path = browser_path
         self.use_incognito = use_incognito
         
+        # Playwright objects
+        self.playwright: Optional[Playwright] = None
+        self.browser: Optional[Browser] = None
+        self.context: Optional[BrowserContext] = None
+        
         # 注册信息
         self.email = None
         self.password = None
@@ -40,136 +47,186 @@ class TwitterRegister:
         self.birthday = None
         self.username = None
         
-        logger.info("Twitter注册器已初始化（纯DrissionPage实现）")
+        logger.info("Twitter注册器已初始化（Playwright + Stealth实现）")
+        logger.info("提示: 在终端运行期间按 'P' 键可暂停/恢复脚本执行")
+    
+    def _check_paused(self):
+        """检查是否按下暂停键"""
+        if msvcrt.kbhit():
+            key = msvcrt.getch()
+            if key.lower() == b'p':
+                logger.info("\n" + "="*40)
+                logger.info("⏸️  脚本已暂停！")
+                logger.info("按 'P' 键继续执行...")
+                logger.info("="*40 + "\n")
+                
+                while True:
+                    time.sleep(0.1)
+                    if msvcrt.kbhit():
+                        key = msvcrt.getch()
+                        if key.lower() == b'p':
+                            logger.info("▶️  脚本继续执行")
+                            break
     
     def _ensure_page(self):
-        """确保页面对象已创建 - 完全使用 DrissionPage 自动管理"""
+        """确保页面对象已创建"""
         if self.page is None:
             logger.info("=" * 60)
-            logger.info("启动浏览器（DrissionPage自动管理 - 增强隐匿模式）")
+            logger.info("启动浏览器（Playwright - Stealth模式）")
             logger.info("=" * 60)
             
-            # 配置 ChromiumOptions - 完全使用 DrissionPage 功能
-            options = ChromiumOptions(read_file=False)
+            self.playwright = sync_playwright().start()
             
-            # 设置浏览器路径
-            if self.browser_path:
-                options.set_browser_path(self.browser_path)
-                logger.info(f"✓ 使用指定浏览器: {self.browser_path}")
-            else:
-                # 尝试项目内置浏览器
-                project_dir = Path(__file__).parent.parent
-                project_chrome = project_dir / "twitter_auto_register" / "chrome-win" / "chrome.exe"
-                
-                if project_chrome.exists():
-                    options.set_browser_path(str(project_chrome))
-                    logger.info(f"✓ 找到项目内置 Chromium")
-                    logger.info(f"   路径: {project_chrome}")
-                else:
-                    logger.info("⚠ 项目内置浏览器不存在，使用系统浏览器")
-                    logger.info(f"   查找路径: {project_chrome}")
+            # 启动参数
+            # 移除 --disable-web-security 和 --disable-extensions 以减少特征
+            launch_args = [
+                "--disable-blink-features=AutomationControlled",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-popup-blocking",
+                "--disable-dev-shm-usage",
+                "--lang=zh-CN",
+                "--disable-infobars",
+                "--mute-audio"
+            ]
             
             # 设置用户数据目录
             user_data_dir = Path(__file__).parent.parent / "browser_data"
             user_data_dir.mkdir(parents=True, exist_ok=True)
-            options.set_user_data_path(str(user_data_dir))
             logger.info(f"✓ 用户数据目录: {user_data_dir}")
             
-            # 自动分配端口
-            options.auto_port()
-            logger.info("✓ 自动分配调试端口")
-            
-            # 无痕模式
-            if self.use_incognito:
-                options.incognito()
-                logger.info("✓ 启用无痕模式")
-            
-            # === 增强反检测配置 ===
-            logger.info("配置浏览器参数 (增强隐匿)...")
-            
-            # 1. 随机 User-Agent
-            ua_list = [
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            ]
-            ua = random.choice(ua_list)
-            options.set_user_agent(ua)
-            logger.info(f"✓ User-Agent: {ua[:50]}...")
-            
-            # 2. 启动参数
-            options.set_argument('--no-first-run')
-            options.set_argument('--no-default-browser-check')
-            options.set_argument('--disable-popup-blocking')
-            options.set_argument('--disable-extensions')
-            options.set_argument('--disable-dev-shm-usage')
-            options.set_argument('--disable-web-security')
-            options.set_argument('--disable-blink-features=AutomationControlled')
-            options.set_argument('--lang=zh-CN')
-            
-            options.set_load_mode('normal')
-            logger.info("✓ 浏览器配置完成")
-            
-            # 创建页面
             try:
-                logger.info("")
-                logger.info("正在启动浏览器...")
-                self.page = ChromiumPage(options)
-                
-                # === 配置隐匿模式 ===
-                # 1. 动态视窗
-                width = random.randint(1024, 1920)
-                height = random.randint(768, 1080)
-                self.page.set.window.size(width, height)
+                # 随机窗口大小
+                width = random.randint(800, 1366)
+                height = random.randint(600, 768)
+                viewport = {'width': width, 'height': height}
                 logger.info(f"✓ 动态视窗: {width}x{height}")
                 
-                # 2. 注入反检测脚本
-                stealth_js = """
-                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined, configurable: true});
-                    delete Object.getPrototypeOf(navigator).webdriver;
-                    Object.defineProperty(Object.getPrototypeOf(navigator), 'webdriver', {get: () => undefined, configurable: true});
+                # 随机 User-Agent
+                ua = self._get_random_ua()
+                logger.info(f"✓ User-Agent: {ua[:50]}...")
+                
+                # 浏览器启动 - 使用 'chrome' 通道以获得更好的指纹（需要系统安装 Chrome）
+                logger.info("✓ 启动 Chrome 浏览器 (channel='chrome')...")
+                
+                try:
+                    if self.use_incognito:
+                        # 无痕模式
+                        logger.info("✓ 启用无痕模式")
+                        self.browser = self.playwright.chromium.launch(
+                            channel="chrome",
+                            headless=False,
+                            args=launch_args
+                        )
+                        self.context = self.browser.new_context(
+                            viewport=viewport,
+                            locale='zh-CN',
+                            user_agent=ua,
+                            timezone_id='Asia/Shanghai'
+                        )
+                    else:
+                        # 持久化模式
+                        self.context = self.playwright.chromium.launch_persistent_context(
+                            user_data_dir=str(user_data_dir),
+                            channel="chrome",
+                            headless=False,
+                            args=launch_args,
+                            viewport=viewport,
+                            locale='zh-CN',
+                            user_agent=ua,
+                            timezone_id='Asia/Shanghai'
+                        )
+                except Exception as e:
+                    logger.warning(f"启动 Chrome 失败 ({e})，尝试使用默认 Chromium...")
+                    # 回退到默认 Chromium
+                    if self.use_incognito:
+                        self.browser = self.playwright.chromium.launch(
+                            headless=False,
+                            args=launch_args
+                        )
+                        self.context = self.browser.new_context(
+                            viewport=viewport,
+                            locale='zh-CN',
+                            user_agent=ua
+                        )
+                    else:
+                        self.context = self.playwright.chromium.launch_persistent_context(
+                            user_data_dir=str(user_data_dir),
+                            headless=False,
+                            args=launch_args,
+                            viewport=viewport,
+                            locale='zh-CN',
+                            user_agent=ua
+                        )
+                
+                # 获取或创建页面
+                self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
+                
+                # === 应用 Stealth ===
+                # 1. 使用 playwright-stealth 2.0.0
+                stealth = Stealth()
+                stealth.apply_stealth_sync(self.page)
+                logger.info("✓ Stealth 插件已应用 (v2.0.0)")
+                
+                # 2. 额外注入高级反检测脚本
+                # 精简版：避免与 playwright-stealth 冲突，只保留核心补充
+                self.page.add_init_script("""
+                    // 1. 覆盖 webdriver 属性 (双重保险)
+                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
                     
-                    const originalQuery = window.navigator.permissions.query;
-                    window.navigator.permissions.query = (parameters) => (
-                        parameters.name === 'notifications' ?
-                        Promise.resolve({ state: Notification.permission }) :
-                        originalQuery(parameters)
-                    );
+                    // 2. 绕过 Chrome 自动化检测 (window.chrome)
+                    if (!window.chrome) {
+                        window.chrome = {
+                            runtime: {},
+                            loadTimes: function() {},
+                            csi: function() {},
+                            app: {}
+                        };
+                    }
                     
-                    Object.defineProperty(navigator, 'languages', {get: () => ['zh-CN', 'zh', 'en'], configurable: true});
-                    Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5], configurable: true});
-                    Object.defineProperty(navigator, 'mimeTypes', {get: () => [1, 2, 3, 4, 5], configurable: true});
-                    Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8, configurable: true});
-                    Object.defineProperty(navigator, 'deviceMemory', {get: () => 8, configurable: true});
-                    Object.defineProperty(navigator, 'platform', {get: () => 'Win32', configurable: true});
+                    // 3. 伪造硬件并发数
+                    Object.defineProperty(navigator, 'hardwareConcurrency', {
+                        get: () => 8
+                    });
                     
-                    window.chrome = {runtime: {}, loadTimes: function() {}, csi: function() {}, app: {}};
+                    // 4. 伪造设备内存
+                    Object.defineProperty(navigator, 'deviceMemory', {
+                        get: () => 8
+                    });
                     
+                    // 5. 伪造 WebGL (仅做基础伪造，避免过度mock导致异常)
                     const getParameter = WebGLRenderingContext.prototype.getParameter;
                     WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                        if (parameter === 37445) return 'Intel Inc.';
-                        if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+                        // UNMASKED_VENDOR_WEBGL
+                        if (parameter === 37445) {
+                            return 'Intel Inc.';
+                        }
+                        // UNMASKED_RENDERER_WEBGL
+                        if (parameter === 37446) {
+                            return 'Intel Iris OpenGL Engine';
+                        }
                         return getParameter.call(this, parameter);
                     };
-                """
+                """)
+                logger.info("✓ 高级反检测脚本已注入 (精简版)")
                 
-                self.page.run_cdp('Page.addScriptToEvaluateOnNewDocument', source=stealth_js)
-                logger.info("✓ CDP反检测脚本: 已注入 (含原型链)")
-                
-                # 3. 网络层请求头
+                logger.info("✓ 浏览器启动成功")
                 logger.info("")
+                
             except Exception as e:
-                logger.error("")
                 logger.error("=" * 60)
                 logger.error(f"✗ 浏览器启动失败！")
-                logger.error("可能的原因：")
-                logger.error("1. 未安装 Chrome/Chromium/Edge 浏览器")
-                logger.error("2. 项目内置浏览器路径不正确")
-                logger.error("3. 浏览器被占用或端口冲突")
-                logger.error("")
                 logger.error(f"错误详情: {e}")
                 logger.error("=" * 60)
                 raise
+    
+    def _get_random_ua(self):
+        ua_list = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        ]
+        return random.choice(ua_list)
     
     def register(self) -> Dict:
         """
@@ -201,7 +258,7 @@ class TwitterRegister:
             # 步骤4: 获取邮箱和密码
             logger.info("步骤4: 准备获取邮箱和密码...")
             self.service.report_status('need_email', '准备获取邮箱和密码')
-            self._random_wait(0.5, 1)  # 给外部服务一点反应时间
+            self._random_wait(0.5, 1)
             
             self.email, self.password = self.service.request_email()
             logger.info(f"获取到邮箱: {self.email}")
@@ -226,7 +283,7 @@ class TwitterRegister:
             self.service.report_status('need_email_code', '准备输入验证码', {
                 'email': self.email
             })
-            self._random_wait(0.5, 1)  # 给外部服务一点反应时间
+            self._random_wait(0.5, 1)
             
             if not self._input_email_code():
                 return self._error_result("输入邮箱验证码失败")
@@ -290,65 +347,111 @@ class TwitterRegister:
             'username': self.username
         }
     
-    def _random_wait(self, min_sec: float = 1.0, max_sec: float = 3.0):
-        """随机等待 - 使用 time.sleep"""
-        wait_time = random.uniform(min_sec, max_sec)
+    def _random_wait(self, min_seconds=1.0, max_seconds=3.0):
+        """随机等待"""
+        self._check_paused()  # 检查暂停
+        wait_time = random.uniform(min_seconds, max_seconds)
         time.sleep(wait_time)
+        self._check_paused()  # 再次检查
     
+    def _find_element(self, selector: str, timeout: float = 1.0) -> Optional[Locator]:
+        """
+        查找元素辅助方法，模拟 DrissionPage 的查找逻辑
+        selector 支持:
+        - text:文本内容 -> text=文本内容
+        - tag:input@name=xxx -> input[name='xxx']
+        - @id=xxx -> #xxx
+        """
+        try:
+            # 转换选择器
+            playwright_selector = selector
+            if selector.startswith('text:'):
+                text = selector.split(':', 1)[1]
+                playwright_selector = f"text={text}"
+            elif selector.startswith('tag:'):
+                # 简单处理 tag:input@name=value -> input[name='value']
+                # tag:input@autocomplete=one-time-code -> input[autocomplete='one-time-code']
+                parts = selector.split('@')
+                tag = parts[0].split(':')[1]
+                if len(parts) > 1:
+                    attr_part = parts[1]
+                    if '=' in attr_part:
+                        attr, val = attr_part.split('=', 1)
+                        playwright_selector = f"{tag}[{attr}='{val}']"
+                    else:
+                        playwright_selector = f"{tag}[{attr_part}]"
+                else:
+                    playwright_selector = tag
+            elif selector.startswith('@id='):
+                playwright_selector = f"#{selector.split('=', 1)[1]}"
+            
+            # 查找
+            locator = self.page.locator(playwright_selector).first
+            try:
+                locator.wait_for(state='attached', timeout=timeout * 1000)
+                return locator
+            except:
+                return None
+                
+        except Exception as e:
+            # logger.debug(f"查找元素失败 {selector}: {e}")
+            return None
+
+    def _find_elements(self, selector: str, timeout: float = 1.0) -> List[Locator]:
+        """查找多个元素"""
+        try:
+            # 转换选择器 (简化版，同上)
+            playwright_selector = selector
+            if selector.startswith('tag:'):
+                playwright_selector = selector.split(':')[1]
+            
+            locator = self.page.locator(playwright_selector)
+            try:
+                # 等待至少一个出现
+                locator.first.wait_for(state='attached', timeout=timeout * 1000)
+            except:
+                pass
+            
+            return locator.all()
+        except:
+            return []
+
     def _handle_retry_if_exists(self, max_retries=3) -> bool:
-        """处理重试按钮 - 纯 DrissionPage"""
+        """处理重试按钮"""
         try:
             for attempt in range(max_retries):
-                # 使用 DrissionPage 查找重试按钮
-                retry_btn = self.page.ele('text:重试', timeout=2)
+                retry_btn = self._find_element('text:重试', timeout=2)
                 if not retry_btn:
-                    retry_btn = self.page.ele('text:Retry', timeout=1)
+                    retry_btn = self._find_element('text:Retry', timeout=1)
                 if not retry_btn:
-                    retry_btn = self.page.ele('text:重新尝试', timeout=1)
+                    retry_btn = self._find_element('text:重新尝试', timeout=1)
                 if not retry_btn:
-                    retry_btn = self.page.ele('text:Try again', timeout=1)
+                    retry_btn = self._find_element('text:Try again', timeout=1)
                 
-                if retry_btn:
+                if retry_btn and retry_btn.is_visible():
                     logger.info(f"⚠️  检测到重试按钮，点击重试 (第{attempt+1}次)")
                     retry_btn.click()
                     self._random_wait(2, 3)
                 else:
-                    # 没有重试按钮，正常
-                    if attempt == 0:
-                        logger.debug("未检测到重试按钮")
-                    else:
+                    if attempt > 0:
                         logger.info("✓ 重试按钮已消失")
                     return True
-            
-            # 达到最大重试次数，检查是否还有重试按钮
-            retry_btn = self.page.ele('text:重试', timeout=1)
-            if retry_btn:
-                logger.warning(f"⚠️  重试了{max_retries}次，但重试按钮仍存在")
             
             return True
             
         except Exception as e:
             logger.debug(f"检查重试按钮时出错: {e}")
-            return True  # 继续执行
+            return True
     
     def _visit_signup_page(self) -> bool:
         """访问注册页面"""
         try:
             logger.info("步骤1: 访问注册页面")
-            self.page.get('https://x.com/i/flow/signup')
+            self.page.goto('https://x.com/i/flow/signup', timeout=60000)
             
-            # 使用 DrissionPage 等待页面加载完成
             logger.info("等待页面加载...")
             self._random_wait(2, 4)
             
-            # 再次注入反检测代码（每个页面都需要）
-            self.page.run_js('''
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                });
-            ''')
-            
-            # 检查是否有重试按钮
             self._handle_retry_if_exists()
             
             logger.info("✓ 注册页面访问成功")
@@ -358,45 +461,36 @@ class TwitterRegister:
             return False
     
     def _click_create_account(self) -> bool:
-        """点击创建账号按钮 - 纯 DrissionPage 实现"""
+        """点击创建账号按钮"""
         try:
             logger.info("步骤2: 点击创建账号按钮")
-            
-            # 等待页面加载
             self._random_wait(2, 3)
-            
-            # 检查是否有重试按钮
             self._handle_retry_if_exists()
             
-            # 方法：遍历所有button（已验证最可靠）
-            # 减少timeout，提高查找速度
-            all_buttons = self.page.eles('tag:button', timeout=3)
-            logger.info(f"找到 {len(all_buttons)} 个 button 元素")
+            # 查找所有按钮
+            buttons = self.page.locator("button").all()
+            logger.info(f"找到 {len(buttons)} 个 button 元素")
             
-            # 先打印所有按钮文本，方便调试
-            for i, btn in enumerate(all_buttons):
-                text = btn.text
-                logger.info(f"  Button[{i}]: '{text}'")
-            
-            for i, btn in enumerate(all_buttons):
-                text = btn.text
-                if text and ('创建账号' in text or 'Create account' in text or 
-                             '创建帐号' in text or 'Sign up' in text):
-                    logger.info(f"找到目标按钮[{i}]: '{text}'")
+            for i, btn in enumerate(buttons):
+                try:
+                    text = btn.inner_text()
+                    # logger.info(f"  Button[{i}]: '{text}'")
                     
-                    # 滚动到可见区域（DrissionPage 自动功能）
-                    btn.scroll.to_see()
-                    self._random_wait(0.5, 1)
-                    
-                    # 点击（DrissionPage 自动处理）
-                    btn.click()
-                    logger.info("✓ 点击成功")
-                    self._random_wait(2, 4)
-                    
-                    # 点击后也可能出现重试
-                    self._handle_retry_if_exists()
-                    
-                    return True
+                    if text and ('创建账号' in text or 'Create account' in text or 
+                                 '创建帐号' in text or 'Sign up' in text):
+                        logger.info(f"找到目标按钮[{i}]: '{text}'")
+                        
+                        btn.scroll_into_view_if_needed()
+                        self._random_wait(0.5, 1)
+                        
+                        btn.click()
+                        logger.info("✓ 点击成功")
+                        self._random_wait(2, 4)
+                        
+                        self._handle_retry_if_exists()
+                        return True
+                except:
+                    continue
             
             logger.warning("未找到创建账号按钮")
             return False
@@ -410,10 +504,9 @@ class TwitterRegister:
         try:
             logger.info("步骤3: 切换到邮箱注册")
             
-            # 使用 DrissionPage 的文本定位
-            email_link = self.page.ele('text:改用电子邮件', timeout=5)
+            email_link = self._find_element('text:改用电子邮件', timeout=5)
             if not email_link:
-                email_link = self.page.ele('text:Use email instead', timeout=2)
+                email_link = self._find_element('text:Use email instead', timeout=2)
             
             if email_link:
                 email_link.click()
@@ -426,14 +519,13 @@ class TwitterRegister:
             
         except Exception as e:
             logger.warning(f"切换邮箱注册失败: {e}")
-            return True  # 继续尝试
+            return True
     
     def _fill_signup_form(self) -> bool:
-        """填写注册表单 - 纯 DrissionPage"""
+        """填写注册表单"""
         try:
             logger.info("步骤5: 填写注册表单")
             
-            # 生成信息
             self.name = self._generate_random_name()
             self.birthday = self._generate_random_birthday()
             
@@ -441,20 +533,20 @@ class TwitterRegister:
             logger.info(f"邮箱: {self.email}")
             logger.info(f"生日: {self.birthday}")
             
-            # 填写姓名 - 使用 DrissionPage 定位
-            name_input = self.page.ele('tag:input@name=name', timeout=10)
+            # 填写姓名
+            name_input = self._find_element('tag:input@name=name', timeout=10)
             if name_input:
                 logger.info("填写姓名...")
-                name_input.input(self.name)
+                name_input.fill(self.name)
                 self._random_wait(0.5, 1)
             else:
                 logger.warning("未找到姓名输入框")
             
             # 填写邮箱
-            email_input = self.page.ele('tag:input@type=email', timeout=5)
+            email_input = self._find_element('tag:input@type=email', timeout=5)
             if email_input:
                 logger.info("填写邮箱...")
-                email_input.input(self.email)
+                email_input.fill(self.email)
                 self._random_wait(0.5, 1)
             else:
                 logger.warning("未找到邮箱输入框")
@@ -462,49 +554,30 @@ class TwitterRegister:
             # 填写生日
             self._fill_birthday()
             
-            # 点击下一步 - DrissionPage 文本定位
-            next_btn = self.page.ele('text:下一步', timeout=5)
+            # 点击下一步
+            next_btn = self._find_element('text:下一步', timeout=5)
             if not next_btn:
-                next_btn = self.page.ele('text:Next', timeout=2)
+                next_btn = self._find_element('text:Next', timeout=2)
             
             if next_btn:
                 next_btn.click()
                 logger.info("✓ 表单已提交，等待页面响应...")
-                
-                # 等待页面跳转或加载（DrissionPage 等待）
                 self._random_wait(3, 5)
-                
-                # 点击后可能出现重试
                 self._handle_retry_if_exists()
                 
-                # 使用 DrissionPage 等待多种可能的页面状态
+                # 检测页面状态
                 logger.info("检测页面状态...")
-                for attempt in range(15):  # 最多等待45秒
-                    # 每次检测前注入反检测代码
-                    try:
-                        self.page.run_js('Object.defineProperty(navigator, "webdriver", {get: () => undefined});')
-                    except:
-                        pass
-                    
-                    # 检查是否出现了验证按钮
-                    verify_btn = self.page.ele('text:验证', timeout=1)
+                for attempt in range(15):
+                    verify_btn = self._find_element('text:验证', timeout=1)
                     if not verify_btn:
-                        verify_btn = self.page.ele('text:Verify', timeout=1)
+                        verify_btn = self._find_element('text:Verify', timeout=1)
                     
-                    # 检查是否出现了验证码输入框
-                    code_input = self.page.ele('tag:input@autocomplete=one-time-code', timeout=1)
+                    code_input = self._find_element('tag:input@autocomplete=one-time-code', timeout=1)
+                    pwd_input = self._find_element('tag:input@type=password', timeout=1)
                     
-                    # 检查是否出现了密码输入框
-                    pwd_input = self.page.ele('tag:input@type=password', timeout=1)
-                    
-                    # 检查是否有错误提示（更全面）
-                    error_msg = self.page.ele('text:出错', timeout=1)
-                    if not error_msg:
-                        error_msg = self.page.ele('text:error', timeout=1)
-                    if not error_msg:
-                        error_msg = self.page.ele('text:错误', timeout=1)
-                    if not error_msg:
-                        error_msg = self.page.ele('text:Something went wrong', timeout=1)
+                    error_msg = self._find_element('text:出错', timeout=1)
+                    if not error_msg: error_msg = self._find_element('text:error', timeout=1)
+                    if not error_msg: error_msg = self._find_element('text:错误', timeout=1)
                     
                     if verify_btn:
                         logger.info("→ 检测到人机验证页面")
@@ -516,23 +589,15 @@ class TwitterRegister:
                         logger.info("→ 检测到密码设置页面")
                         break
                     elif error_msg:
-                        error_text = error_msg.text if error_msg else ""
-                        logger.warning(f"→ 检测到错误: {error_text}")
-                        # 检查是否被阻止
-                        if '阻止' in error_text or 'blocked' in error_text.lower():
-                            logger.error("⚠️  可能被X检测并阻止了")
-                            logger.error("建议: 1. 关闭浏览器重新尝试 2. 更换网络环境")
+                        try:
+                            error_text = error_msg.inner_text()
+                            logger.warning(f"→ 检测到错误: {error_text}")
+                            if '阻止' in error_text or 'blocked' in error_text.lower():
+                                logger.error("⚠️  可能被X检测并阻止了")
+                        except:
+                            pass
                         break
                     else:
-                        # 使用 DrissionPage 检查页面状态
-                        try:
-                            current_url = self.page.url
-                            page_title = self.page.title
-                            logger.info(f"  等待... ({attempt+1}/15)")
-                            logger.info(f"    URL: {current_url[:80]}")
-                            logger.info(f"    标题: {page_title[:40] if page_title else 'None'}")
-                        except Exception as e:
-                            logger.warning(f"  无法获取页面信息: {e}")
                         self._random_wait(2, 3)
                 
                 logger.info("✓ 表单填写完成")
@@ -544,97 +609,70 @@ class TwitterRegister:
             return False
     
     def _fill_birthday(self):
-        """填写生日 - 纯 DrissionPage"""
+        """填写生日"""
         try:
             year, month, day = self.birthday
             logger.info(f"填写生日: {year}-{month:02d}-{day:02d}")
             
-            # 使用 DrissionPage 查找所有 select 元素
-            all_selects = self.page.eles('tag:select', timeout=5)
+            all_selects = self.page.locator("select").all()
             logger.info(f"找到 {len(all_selects)} 个下拉框")
             
             for i, select_ele in enumerate(all_selects):
-                # 获取select的属性
-                select_id = select_ele.attr('id') or ''
-                select_labelledby = select_ele.attr('aria-labelledby') or ''
-                
-                logger.info(f"下拉框[{i}]: id={select_id}, aria-labelledby={select_labelledby}")
-                
-                # 通过 aria-labelledby 找到对应的 label 元素并读取文本
-                label_text = ''
-                if select_labelledby:
-                    # 使用 DrissionPage 通过 id 查找 label
-                    label_ele = self.page.ele(f'@id={select_labelledby}', timeout=2)
-                    if label_ele:
-                        label_text = label_ele.text.lower()
-                        logger.info(f"  标签文本: '{label_text}'")
-                
-                # 根据 label 文本或 id 判断是月/日/年
-                # Twitter 的顺序: SELECTOR_1=月, SELECTOR_2=日, SELECTOR_3=年
-                value_to_select = None
-                field_name = ''
-                
-                if ('month' in label_text or '月' in label_text or select_id == 'SELECTOR_1'):
-                    value_to_select = str(month)
-                    field_name = '月份'
-                elif ('day' in label_text or '日' in label_text or select_id == 'SELECTOR_2'):
-                    value_to_select = str(day)
-                    field_name = '日期'
-                elif ('year' in label_text or '年' in label_text or select_id == 'SELECTOR_3'):
-                    value_to_select = str(year)
-                    field_name = '年份'
-                
-                if value_to_select:
-                    logger.info(f"  → 选择{field_name}: {value_to_select}")
+                try:
+                    select_id = select_ele.get_attribute('id') or ''
+                    select_labelledby = select_ele.get_attribute('aria-labelledby') or ''
                     
-                    # 使用 DrissionPage 的 select 功能
-                    try:
-                        select_ele.select.by_value(value_to_select)
+                    label_text = ''
+                    if select_labelledby:
+                        label_ele = self.page.locator(f"#{select_labelledby}").first
+                        if label_ele.count() > 0:
+                            label_text = label_ele.inner_text().lower()
+                    
+                    value_to_select = None
+                    field_name = ''
+                    
+                    if ('month' in label_text or '月' in label_text or select_id == 'SELECTOR_1'):
+                        value_to_select = str(month)
+                        field_name = '月份'
+                    elif ('day' in label_text or '日' in label_text or select_id == 'SELECTOR_2'):
+                        value_to_select = str(day)
+                        field_name = '日期'
+                    elif ('year' in label_text or '年' in label_text or select_id == 'SELECTOR_3'):
+                        value_to_select = str(year)
+                        field_name = '年份'
+                    
+                    if value_to_select:
+                        logger.info(f"  → 选择{field_name}: {value_to_select}")
+                        select_ele.select_option(value=value_to_select)
                         self._random_wait(0.5, 1)
-                        
-                        # 验证选择是否成功
-                        selected_value = select_ele.attr('value') or select_ele.value
-                        if selected_value == value_to_select:
-                            logger.info(f"  ✓ {field_name}选择成功: {selected_value}")
-                        else:
-                            logger.warning(f"  ⚠ {field_name}选择可能失败: 期望{value_to_select}, 当前{selected_value}")
-                    except Exception as e:
-                        logger.warning(f"  ✗ 选择{field_name}失败: {e}")
+                except Exception as e:
+                    logger.warning(f"  ✗ 选择{field_name}失败: {e}")
             
             logger.info("✓ 生日填写完成")
             
         except Exception as e:
             logger.warning(f"填写生日失败: {e}")
-            # 继续执行，不阻断流程
-    
+
     def _handle_captcha(self) -> bool:
         """处理人机验证"""
         try:
             logger.info("步骤6: 处理人机验证")
-            
-            # 检查是否有重试按钮
             self._handle_retry_if_exists()
             
-            # 快速检查是否直接跳过了验证（出现了验证码输入框）
-            logger.info("快速检查页面状态...")
-            code_input = self.page.ele('tag:input@autocomplete=one-time-code', timeout=2)
+            code_input = self._find_element('tag:input@autocomplete=one-time-code', timeout=2)
             if code_input:
                 logger.info("✓ 未触发人机验证，直接进入验证码页面")
                 return True
             
-            # 检查是否需要人机验证
-            logger.info("检查是否需要人机验证...")
-            verify_btn = self.page.ele('text:验证', timeout=3)
+            verify_btn = self._find_element('text:验证', timeout=3)
             if not verify_btn:
-                verify_btn = self.page.ele('text:Verify', timeout=1)
+                verify_btn = self._find_element('text:Verify', timeout=1)
             
             if not verify_btn:
-                # 再次确认是否进入了验证码页面（防止刚才加载慢没检测到）
-                code_input = self.page.ele('tag:input@autocomplete=one-time-code', timeout=2)
+                code_input = self._find_element('tag:input@autocomplete=one-time-code', timeout=2)
                 if code_input:
                     logger.info("✓ 检测到验证码输入框，跳过验证")
                     return True
-                
                 logger.info("✓ 未检测到人机验证按钮")
                 return True
             
@@ -655,18 +693,15 @@ class TwitterRegister:
                 logger.info("等待最多 300 秒...")
                 logger.info("=" * 60)
                 
-                # 等待验证完成 - 使用 DrissionPage 的 wait
-                # 等待验证按钮消失
                 start_time = time.time()
                 while time.time() - start_time < 300:
-                    verify_btn = self.page.ele('text:验证', timeout=1)
+                    verify_btn = self._find_element('text:验证', timeout=1)
                     if not verify_btn:
-                        verify_btn = self.page.ele('text:Verify', timeout=1)
+                        verify_btn = self._find_element('text:Verify', timeout=1)
                     
                     if not verify_btn:
                         logger.info("✓ 验证已完成")
                         break
-                    
                     time.sleep(3)
             
             self._random_wait(2, 3)
@@ -675,67 +710,44 @@ class TwitterRegister:
         except Exception as e:
             logger.error(f"处理验证失败: {e}")
             return False
-    
+
     def _input_email_code(self) -> bool:
         """输入邮箱验证码"""
         try:
             logger.info("步骤7: 输入邮箱验证码")
             
-            # 检查页面是否正常
-            try:
-                current_url = self.page.url
-                logger.info(f"当前页面: {current_url}")
-            except Exception as e:
-                logger.error(f"无法获取页面URL: {e}")
-                logger.error("页面可能已被阻止或断开连接")
-                return False
-            
-            # 等待验证码输入框 - 使用 DrissionPage 的 ele 方法，增加重试
-            logger.info("查找验证码输入框...")
             code_input = None
             for attempt in range(5):
-                try:
-                    code_input = self.page.ele('tag:input@autocomplete=one-time-code', timeout=10)
-                    if code_input:
-                        logger.info(f"✓ 找到验证码输入框（尝试{attempt+1}）")
-                        break
-                    
-                    # 也尝试其他定位方式
-                    code_input = self.page.ele('tag:input@name=verficationCode', timeout=5)
-                    if code_input:
-                        logger.info(f"✓ 找到验证码输入框（备用方式）")
-                        break
-                    
-                    logger.info(f"  未找到验证码输入框，重试... ({attempt+1}/5)")
-                    self._random_wait(2, 3)
-                except Exception as e:
-                    logger.warning(f"  查找失败: {e}")
-                    self._random_wait(2, 3)
+                code_input = self._find_element('tag:input@autocomplete=one-time-code', timeout=10)
+                if code_input:
+                    logger.info(f"✓ 找到验证码输入框")
+                    break
+                
+                code_input = self._find_element('tag:input@name=verficationCode', timeout=5)
+                if code_input:
+                    logger.info(f"✓ 找到验证码输入框（备用方式）")
+                    break
+                
+                logger.info(f"  未找到验证码输入框，重试... ({attempt+1}/5)")
+                self._random_wait(2, 3)
             
             if not code_input:
-                logger.warning("未找到验证码输入框，可能需要人工介入")
-                logger.warning("请在浏览器中查看当前页面状态")
-                self._random_wait(5, 10)  # 给时间观察
+                logger.warning("未找到验证码输入框")
                 return True
             
-            # 获取验证码
             code = self.service.request_email_code(self.email)
             logger.info(f"获取到验证码: {code}")
             
-            # 输入验证码
-            code_input.input(code)
+            code_input.fill(code)
             self._random_wait(1, 2)
             
-            # 点击下一步
-            next_btn = self.page.ele('text:下一步', timeout=5)
+            next_btn = self._find_element('text:下一步', timeout=5)
             if not next_btn:
-                next_btn = self.page.ele('text:Next', timeout=2)
+                next_btn = self._find_element('text:Next', timeout=2)
             
             if next_btn:
                 next_btn.click()
                 self._random_wait(2, 3)
-                
-                # 点击后可能出现重试
                 self._handle_retry_if_exists()
             
             return True
@@ -743,32 +755,27 @@ class TwitterRegister:
         except Exception as e:
             logger.error(f"输入验证码失败: {e}")
             return False
-    
+
     def _set_password(self) -> bool:
         """设置密码"""
         try:
             logger.info("步骤8: 设置密码")
             
-            # 查找密码输入框
-            pwd_input = self.page.ele('tag:input@type=password', timeout=30)
+            pwd_input = self._find_element('tag:input@type=password', timeout=30)
             if not pwd_input:
                 logger.warning("未找到密码输入框")
                 return True
             
-            # 输入密码
-            pwd_input.input(self.password)
+            pwd_input.fill(self.password)
             self._random_wait(1, 2)
             
-            # 点击下一步
-            next_btn = self.page.ele('text:下一步', timeout=5)
+            next_btn = self._find_element('text:下一步', timeout=5)
             if not next_btn:
-                next_btn = self.page.ele('text:Next', timeout=2)
+                next_btn = self._find_element('text:Next', timeout=2)
             
             if next_btn:
                 next_btn.click()
                 self._random_wait(2, 3)
-                
-                # 点击后可能出现重试
                 self._handle_retry_if_exists()
             
             return True
@@ -776,15 +783,15 @@ class TwitterRegister:
         except Exception as e:
             logger.error(f"设置密码失败: {e}")
             return False
-    
+
     def _skip_profile_photo(self) -> bool:
         """跳过头像上传"""
         try:
             logger.info("步骤9: 跳过头像上传")
             
-            skip_btn = self.page.ele('text:Skip for now', timeout=10)
+            skip_btn = self._find_element('text:Skip for now', timeout=10)
             if not skip_btn:
-                skip_btn = self.page.ele('text:跳过', timeout=2)
+                skip_btn = self._find_element('text:跳过', timeout=2)
             
             if skip_btn:
                 skip_btn.click()
@@ -795,30 +802,28 @@ class TwitterRegister:
         except Exception as e:
             logger.warning(f"跳过头像失败: {e}")
             return True
-    
+
     def _set_username(self) -> bool:
         """设置用户名"""
         try:
             logger.info("步骤10: 设置用户名")
             
-            username_input = self.page.ele('tag:input@autocomplete=username', timeout=30)
+            username_input = self._find_element('tag:input@autocomplete=username', timeout=30)
             if not username_input:
                 logger.warning("未找到用户名输入框")
                 return False
             
-            # 尝试多次直到成功
             for attempt in range(10):
                 self.username = self._generate_username(self.name)
                 logger.info(f"尝试用户名: {self.username}")
                 
-                username_input.clear()
-                username_input.input(self.username)
+                username_input.fill("")
+                username_input.fill(self.username)
                 self._random_wait(1, 2)
                 
-                # 检查是否有错误提示
-                error = self.page.ele('text:已被使用', timeout=2)
+                error = self._find_element('text:已被使用', timeout=2)
                 if not error:
-                    error = self.page.ele('text:isn\'t available', timeout=1)
+                    error = self._find_element('text:isn\'t available', timeout=1)
                 
                 if not error:
                     logger.info(f"✓ 用户名可用: {self.username}")
@@ -826,18 +831,15 @@ class TwitterRegister:
                     
                 logger.warning(f"用户名已被使用: {self.username}")
             
-            # 点击下一步
-            next_btn = self.page.ele('text:下一步', timeout=5)
+            next_btn = self._find_element('text:下一步', timeout=5)
             if not next_btn:
-                next_btn = self.page.ele('text:Next', timeout=2)
+                next_btn = self._find_element('text:Next', timeout=2)
             if not next_btn:
-                next_btn = self.page.ele('text:注册', timeout=2)
+                next_btn = self._find_element('text:注册', timeout=2)
             
             if next_btn:
                 next_btn.click()
                 self._random_wait(2, 3)
-                
-                # 点击后可能出现重试
                 self._handle_retry_if_exists()
             
             return True
@@ -845,7 +847,7 @@ class TwitterRegister:
         except Exception as e:
             logger.error(f"设置用户名失败: {e}")
             return False
-    
+
     def _skip_optional_steps(self) -> bool:
         """跳过可选步骤"""
         try:
@@ -854,14 +856,13 @@ class TwitterRegister:
             for i in range(5):
                 self._random_wait(1, 2)
                 
-                # 查找跳过按钮 - DrissionPage 多种定位
-                skip_btn = self.page.ele('text:Skip', timeout=3)
+                skip_btn = self._find_element('text:Skip', timeout=3)
                 if not skip_btn:
-                    skip_btn = self.page.ele('text:跳过', timeout=1)
+                    skip_btn = self._find_element('text:跳过', timeout=1)
                 if not skip_btn:
-                    skip_btn = self.page.ele('text:Not now', timeout=1)
+                    skip_btn = self._find_element('text:Not now', timeout=1)
                 if not skip_btn:
-                    skip_btn = self.page.ele('text:Next', timeout=1)
+                    skip_btn = self._find_element('text:Next', timeout=1)
                 
                 if skip_btn:
                     skip_btn.click()
@@ -876,8 +877,7 @@ class TwitterRegister:
         except Exception as e:
             logger.warning(f"跳过可选步骤失败: {e}")
             return False
-    
-    # 辅助函数
+
     def _generate_random_name(self) -> str:
         """生成随机名字"""
         first_names = ["Alex", "Sam", "Jordan", "Taylor", "Morgan"]
@@ -892,7 +892,6 @@ class TwitterRegister:
         birth_year = today.year - age
         birth_month = random.randint(1, 12)
         
-        # 确定该月的天数
         if birth_month in [1, 3, 5, 7, 8, 10, 12]:
             max_day = 31
         elif birth_month in [4, 6, 9, 11]:
@@ -914,11 +913,14 @@ class TwitterRegister:
         return username[:max_length]
     
     def close(self):
-        """关闭浏览器 - DrissionPage 自动管理"""
+        """关闭浏览器"""
         try:
-            if self.page:
-                self.page.quit()
-                logger.info("浏览器已关闭")
+            if self.context:
+                self.context.close()
+            if self.browser:
+                self.browser.close()
+            if self.playwright:
+                self.playwright.stop()
+            logger.info("浏览器已关闭")
         except:
             pass
-

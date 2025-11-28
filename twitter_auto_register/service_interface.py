@@ -129,7 +129,7 @@ class HTTPServiceInterface(ServiceInterface):
         
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         try:
-            response = requests.post(url, json=data, headers=self.headers, timeout=30)
+            response = requests.post(url, json=data, headers=self.headers, timeout=60)
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -171,13 +171,36 @@ class HTTPServiceInterface(ServiceInterface):
         logger.info("正在请求邮箱和密码...")
         response = self._post_request('/api/email/request', {})
         
-        email = response.get('email')
-        password = response.get('password')
+        # 调试：打印完整响应
+        logger.info(f"API 响应数据: {response}")
+        
+        email = response.get('email', '')
+        password = response.get('password', '')
+        
+        # 兼容处理：检测字段是否被调换
+        # 如果 email 为空但 password 包含 @ 符号，说明字段被调换了
+        if not email and password and '@' in password:
+            logger.warning("⚠️  检测到 API 返回字段错误，自动修正...")
+            logger.warning(f"   原始数据: email='{email}', password='{password}'")
+            # 交换字段
+            email, password = password, email
+            logger.warning(f"   修正后: email='{email}', password='{password}'")
+        
+        # 如果 password 为空但 email 不包含 @，也可能是调换了
+        elif email and not password and '@' not in email:
+            logger.warning("⚠️  检测到 API 返回字段可能错误，尝试修正...")
+            logger.warning(f"   原始数据: email='{email}', password='{password}'")
+            # 交换字段
+            email, password = password, email
+            logger.warning(f"   修正后: email='{email}', password='{password}'")
+        
+        logger.info(f"解析结果 - 邮箱: {email}, 密码: {'***' if password else None}")
         
         if not email or not password:
-            raise ValueError("服务返回的邮箱或密码为空")
+            logger.error(f"服务返回数据不完整！完整响应: {response}")
+            raise ValueError(f"服务返回的邮箱或密码为空。响应: {response}")
         
-        logger.info(f"成功获取邮箱: {email}")
+        logger.info(f"✅ 成功获取邮箱: {email}")
         return email, password
     
     def request_captcha_solution(self, captcha_type: str, site_key: str, page_url: str) -> Dict:
@@ -331,7 +354,7 @@ class StatusReportWrapper(ServiceInterface):
                 payload['data'] = data
             
             url = f"{self.status_url}/api/status/report"
-            response = requests.post(url, json=payload, headers=self.headers, timeout=5)
+            response = requests.post(url, json=payload, headers=self.headers, timeout=60)
             response.raise_for_status()
             
             logger.debug(f"状态已上报到外部API: {status}")

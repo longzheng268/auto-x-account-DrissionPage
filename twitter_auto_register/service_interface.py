@@ -115,29 +115,83 @@ class HTTPServiceInterface(ServiceInterface):
             base_url: 服务基础URL
             api_key: API密钥（可选）
         """
+        import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
         self.headers = {
             'Content-Type': 'application/json',
+            'Connection': 'keep-alive',  # 保持连接
         }
         if api_key:
             self.headers['Authorization'] = f'Bearer {api_key}'
-    
-    def _post_request(self, endpoint: str, data: Dict) -> Dict:
-        """发送POST请求"""
-        import requests
         
+        # 创建持久化 Session（复用连接）
+        self.session = requests.Session()
+        
+        # 配置自动重试策略
+        retry_strategy = Retry(
+            total=5,  # 最多重试 5 次
+            backoff_factor=1,  # 重试间隔：1s, 2s, 4s, 8s, 16s
+            status_forcelist=[429, 500, 502, 503, 504],  # 这些状态码会重试
+            allowed_methods=["HEAD", "GET", "POST", "PUT", "DELETE", "OPTIONS", "TRACE"]
+        )
+        
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=10,  # 连接池大小
+            pool_maxsize=10,
+            pool_block=False
+        )
+        
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+        self.session.headers.update(self.headers)
+        
+        logger.info(f"✓ HTTP Session 已初始化（启用连接保持和自动重试）")
+    
+    def _post_request(self, endpoint: str, data: Dict, max_retries: int = 3) -> Dict:
+        """发送POST请求（带重试）"""
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        try:
-            response = requests.post(url, json=data, headers=self.headers, timeout=60)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"HTTP请求失败: {endpoint}, 错误: {str(e)}")
-            raise
+        
+        for attempt in range(max_retries):
+            try:
+                logger.debug(f"发送 POST 请求: {url} (尝试 {attempt + 1}/{max_retries})")
+                response = self.session.post(url, json=data, timeout=120)  # 增加到 120 秒
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # 指数退避：1s, 2s, 4s
+                    logger.warning(f"请求失败 ({e})，{wait_time}秒后重试...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"HTTP请求失败: {endpoint}, 错误: {str(e)}")
+                    raise
+    
+    def _get_request(self, endpoint: str, params: Optional[Dict] = None, max_retries: int = 3) -> Dict:
+        """发送GET请求（带重试）"""
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        
+        for attempt in range(max_retries):
+            try:
+                logger.debug(f"发送 GET 请求: {url} (尝试 {attempt + 1}/{max_retries})")
+                response = self.session.get(url, params=params, timeout=120)
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"请求失败 ({e})，{wait_time}秒后重试...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"HTTP请求失败: {endpoint}, 错误: {str(e)}")
+                    raise
     
     def report_status(self, status: str, message: str = "", data: Optional[Dict] = None) -> None:
-        """上报状态给外部服务"""
+        """上报状态给外部服务（带重试）"""
         try:
             payload = {
                 'status': status,
@@ -147,24 +201,11 @@ class HTTPServiceInterface(ServiceInterface):
             if data:
                 payload['data'] = data
             
-            self._post_request('api/status/report', payload)
+            self._post_request('api/status/report', payload, max_retries=2)  # 状态上报只重试 2 次
             logger.info(f"状态已上报: {status} - {message}")
         except Exception as e:
             logger.warning(f"状态上报失败: {str(e)}")
             # 状态上报失败不应该中断流程
-    
-    def _get_request(self, endpoint: str, params: Optional[Dict] = None) -> Dict:
-        """发送GET请求"""
-        import requests
-        
-        url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        try:
-            response = requests.get(url, params=params, headers=self.headers, timeout=30)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"HTTP请求失败: {endpoint}, 错误: {str(e)}")
-            raise
     
     def request_email(self) -> Tuple[str, str]:
         """请求邮箱和密码"""
@@ -327,14 +368,31 @@ class StatusReportWrapper(ServiceInterface):
             status_url: 状态上报API地址
             api_key: API密钥
         """
+        import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        
         self.base_service = base_service
         self.status_url = status_url.rstrip('/')
         self.api_key = api_key
         self.headers = {
             'Content-Type': 'application/json',
+            'Connection': 'keep-alive',
         }
         if api_key:
             self.headers['Authorization'] = f'Bearer {api_key}'
+        
+        # 创建独立的 Session 用于状态上报
+        self.session = requests.Session()
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+        self.session.headers.update(self.headers)
     
     def report_status(self, status: str, message: str = "", data: Optional[Dict] = None) -> None:
         """上报状态到外部API"""
@@ -343,8 +401,6 @@ class StatusReportWrapper(ServiceInterface):
         
         # 再向独立的状态API上报
         try:
-            import requests
-            
             payload = {
                 'status': status,
                 'message': message,
@@ -354,7 +410,7 @@ class StatusReportWrapper(ServiceInterface):
                 payload['data'] = data
             
             url = f"{self.status_url}/api/status/report"
-            response = requests.post(url, json=payload, headers=self.headers, timeout=60)
+            response = self.session.post(url, json=payload, timeout=120)
             response.raise_for_status()
             
             logger.debug(f"状态已上报到外部API: {status}")

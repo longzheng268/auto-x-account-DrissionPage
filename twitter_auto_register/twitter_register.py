@@ -77,17 +77,13 @@ class TwitterRegister:
             
             self.playwright = sync_playwright().start()
             
-            # 启动参数
-            # 移除 --disable-web-security 和 --disable-extensions 以减少特征
+            # 启动参数 - 最小化，避免触发风控
+            # 移除所有危险参数：--disable-web-security, --disable-extensions 等
             launch_args = [
                 "--disable-blink-features=AutomationControlled",
                 "--no-first-run",
                 "--no-default-browser-check",
-                "--disable-popup-blocking",
-                "--disable-dev-shm-usage",
                 "--lang=zh-CN",
-                "--disable-infobars",
-                "--mute-audio"
             ]
             
             # 设置用户数据目录
@@ -96,17 +92,17 @@ class TwitterRegister:
             logger.info(f"✓ 用户数据目录: {user_data_dir}")
             
             try:
-                # 随机窗口大小
-                width = random.randint(800, 1366)
-                height = random.randint(600, 768)
+                # 使用真实的窗口大小（常见分辨率）
+                width = 800
+                height = 600
                 viewport = {'width': width, 'height': height}
-                logger.info(f"✓ 动态视窗: {width}x{height}")
+                logger.info(f"✓ 视窗大小: {width}x{height}")
                 
-                # 随机 User-Agent
-                ua = self._get_random_ua()
+                # 使用真实稳定的 User-Agent（Chrome 120）
+                ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 logger.info(f"✓ User-Agent: {ua[:50]}...")
                 
-                # 浏览器启动 - 使用 'chrome' 通道以获得更好的指纹（需要系统安装 Chrome）
+                # 浏览器启动 - 使用 'chrome' 通道
                 logger.info("✓ 启动 Chrome 浏览器 (channel='chrome')...")
                 
                 try:
@@ -122,10 +118,13 @@ class TwitterRegister:
                             viewport=viewport,
                             locale='zh-CN',
                             user_agent=ua,
-                            timezone_id='Asia/Shanghai'
+                            timezone_id='Asia/Shanghai',
+                            # 启用第三方 Cookie（Arkose 需要）
+                            accept_downloads=True,
+                            java_script_enabled=True,
                         )
                     else:
-                        # 持久化模式
+                        # 持久化模式 - 使用真实 profile
                         self.context = self.playwright.chromium.launch_persistent_context(
                             user_data_dir=str(user_data_dir),
                             channel="chrome",
@@ -134,7 +133,9 @@ class TwitterRegister:
                             viewport=viewport,
                             locale='zh-CN',
                             user_agent=ua,
-                            timezone_id='Asia/Shanghai'
+                            timezone_id='Asia/Shanghai',
+                            accept_downloads=True,
+                            java_script_enabled=True,
                         )
                 except Exception as e:
                     logger.warning(f"启动 Chrome 失败 ({e})，尝试使用默认 Chromium...")
@@ -147,7 +148,10 @@ class TwitterRegister:
                         self.context = self.browser.new_context(
                             viewport=viewport,
                             locale='zh-CN',
-                            user_agent=ua
+                            user_agent=ua,
+                            timezone_id='Asia/Shanghai',
+                            accept_downloads=True,
+                            java_script_enabled=True,
                         )
                     else:
                         self.context = self.playwright.chromium.launch_persistent_context(
@@ -156,7 +160,10 @@ class TwitterRegister:
                             args=launch_args,
                             viewport=viewport,
                             locale='zh-CN',
-                            user_agent=ua
+                            user_agent=ua,
+                            timezone_id='Asia/Shanghai',
+                            accept_downloads=True,
+                            java_script_enabled=True,
                         )
                 
                 # 获取或创建页面
@@ -168,47 +175,151 @@ class TwitterRegister:
                 stealth.apply_stealth_sync(self.page)
                 logger.info("✓ Stealth 插件已应用 (v2.0.0)")
                 
-                # 2. 额外注入高级反检测脚本
-                # 精简版：避免与 playwright-stealth 冲突，只保留核心补充
+                # 2. 注入完整的高级反检测脚本（早期注入，在文档创建前）
                 self.page.add_init_script("""
-                    // 1. 覆盖 webdriver 属性 (双重保险)
-                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                    
-                    // 2. 绕过 Chrome 自动化检测 (window.chrome)
-                    if (!window.chrome) {
-                        window.chrome = {
-                            runtime: {},
-                            loadTimes: function() {},
-                            csi: function() {},
-                            app: {}
-                        };
-                    }
-                    
-                    // 3. 伪造硬件并发数
-                    Object.defineProperty(navigator, 'hardwareConcurrency', {
-                        get: () => 8
-                    });
-                    
-                    // 4. 伪造设备内存
-                    Object.defineProperty(navigator, 'deviceMemory', {
-                        get: () => 8
-                    });
-                    
-                    // 5. 伪造 WebGL (仅做基础伪造，避免过度mock导致异常)
-                    const getParameter = WebGLRenderingContext.prototype.getParameter;
-                    WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                        // UNMASKED_VENDOR_WEBGL
-                        if (parameter === 37445) {
-                            return 'Intel Inc.';
-                        }
-                        // UNMASKED_RENDERER_WEBGL
-                        if (parameter === 37446) {
-                            return 'Intel Iris OpenGL Engine';
-                        }
-                        return getParameter.call(this, parameter);
-                    };
+(() => {
+  try {
+    // 1. webdriver - 最重要
+    Object.defineProperty(navigator, 'webdriver', { 
+      get: () => undefined, 
+      configurable: true 
+    });
+  } catch (e) {}
+
+  try {
+    // 2. languages - 真实语言列表
+    Object.defineProperty(navigator, 'languages', { 
+      get: () => ['zh-CN', 'zh', 'en-US', 'en'], 
+      configurable: true 
+    });
+  } catch (e) {}
+
+  try {
+    // 3. plugins/mimeTypes - 模拟真实插件（带 item/namedItem）
+    const fakePlugins = [
+      { 
+        name: 'Chrome PDF Plugin', 
+        filename: 'internal-pdf-viewer', 
+        description: 'Portable Document Format',
+        length: 1
+      },
+      {
+        name: 'Chrome PDF Viewer',
+        filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai',
+        description: '',
+        length: 1
+      }
+    ];
+    
+    const pluginArray = {
+      length: fakePlugins.length,
+      item: function(index) {
+        return this[index] || null;
+      },
+      namedItem: function(name) {
+        return fakePlugins.find(p => p.name === name) || null;
+      },
+      refresh: function() {}
+    };
+    
+    fakePlugins.forEach((plugin, index) => {
+      pluginArray[index] = plugin;
+    });
+    
+    Object.setPrototypeOf(pluginArray, PluginArray.prototype);
+    Object.defineProperty(navigator, 'plugins', { 
+      get: () => pluginArray, 
+      configurable: true 
+    });
+    
+    // mimeTypes
+    const mimeTypesArray = {
+      length: 0,
+      item: () => null,
+      namedItem: () => null
+    };
+    Object.setPrototypeOf(mimeTypesArray, MimeTypeArray.prototype);
+    Object.defineProperty(navigator, 'mimeTypes', { 
+      get: () => mimeTypesArray, 
+      configurable: true 
+    });
+  } catch (e) {}
+
+  try {
+    // 4. permissions.query - 绑定原函数
+    const originalQuery = navigator.permissions && navigator.permissions.query;
+    if (originalQuery) {
+      navigator.permissions.query = function(parameters) {
+        if (parameters && parameters.name === 'notifications') {
+          return Promise.resolve({ state: Notification.permission });
+        }
+        return originalQuery.call(this, parameters);
+      };
+    }
+  } catch (e) {}
+
+  try {
+    // 5. window.chrome - 必须存在
+    if (!window.chrome) {
+      window.chrome = {
+        runtime: {},
+        loadTimes: function() {},
+        csi: function() {},
+        app: {}
+      };
+    }
+  } catch (e) {}
+
+  try {
+    // 6. hardwareConcurrency - 真实值
+    Object.defineProperty(navigator, 'hardwareConcurrency', {
+      get: () => 8,
+      configurable: true
+    });
+  } catch (e) {}
+
+  try {
+    // 7. deviceMemory - 真实值
+    Object.defineProperty(navigator, 'deviceMemory', {
+      get: () => 8,
+      configurable: true
+    });
+  } catch (e) {}
+
+  try {
+    // 8. WebGL - 模拟真实显卡
+    const getParameter = WebGLRenderingContext.prototype.getParameter;
+    WebGLRenderingContext.prototype.getParameter = function(parameter) {
+      // UNMASKED_VENDOR_WEBGL
+      if (parameter === 37445) {
+        return 'Intel Inc.';
+      }
+      // UNMASKED_RENDERER_WEBGL
+      if (parameter === 37446) {
+        return 'Intel Iris OpenGL Engine';
+      }
+      return getParameter.call(this, parameter);
+    };
+  } catch (e) {}
+
+  try {
+    // 9. platform - 保持一致
+    Object.defineProperty(navigator, 'platform', {
+      get: () => 'Win32',
+      configurable: true
+    });
+  } catch (e) {}
+
+  try {
+    // 10. maxTouchPoints - 桌面设备
+    Object.defineProperty(navigator, 'maxTouchPoints', {
+      get: () => 0,
+      configurable: true
+    });
+  } catch (e) {}
+})();
                 """)
-                logger.info("✓ 高级反检测脚本已注入 (精简版)")
+                logger.info("✓ 完整反检测脚本已注入（支持 Arkose）")
                 
                 logger.info("✓ 浏览器启动成功")
                 logger.info("")
